@@ -1,0 +1,41 @@
+# could not a find a decent and elegant solution to running the server as a resilient service 
+# this spawns a screen (think tmux) session as a daemon process
+# setting up screen in pre-execstart led to the daemon running and finishing before reaching the main command
+# the server is run as user minecraft in group minecraft
+# to interact with the server in real time switch to the minecraft account and attach to the screen session `screen -r`
+# `ctrl a + d` to detach from the interactive session again
+# regular systemctl commands to stop/start/restart execstart
+# enable process for start on bootup
+# this service also has graceful exiting on `systemctl stop minecraft@server`
+
+[Unit]
+Description=Minecraft Server %i
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/minecraft/server
+
+Type=forking
+
+User=minecraft
+Group=minecraft
+
+Environment="MCMINMEM=1024M"
+Environment="MCMAXMEM=1024M"
+Environment="SHUTDOWN_DELAY=20"
+
+ExecStart=/usr/bin/screen -dmS mc-%i /usr/bin/java -Xmx${MCMAXMEM} -Xms${MCMINMEM} -jar server.jar --nogui
+
+ExecReload=/usr/bin/screen -p 0 -S mc-%i -X eval 'stuff "reload"\\015'
+
+ExecStop=/usr/bin/screen -p 0 -S mc-%i -X eval 'stuff "say SERVER SHUTTING DOWN. Saving map..."\\015'
+ExecStop=/bin/sh -c '/bin/sleep ${SHUTDOWN_DELAY}'
+ExecStop=/usr/bin/screen -p 0 -S mc-%i -X eval 'stuff "save-all"\\015'
+ExecStop=/usr/bin/screen -p 0 -S mc-%i -X eval 'stuff "stop"\\015'
+ExecStop=/bin/bash -c "while ps -p $MAINPID > /dev/null; do /bin/sleep 1; done"
+
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=default.target
